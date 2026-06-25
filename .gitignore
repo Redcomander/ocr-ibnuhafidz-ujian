@@ -7,6 +7,7 @@ node_modules/
 .env
 .env.*
 !.env.example
+connector.config.json
 
 # Logs and temporary files
 *.log

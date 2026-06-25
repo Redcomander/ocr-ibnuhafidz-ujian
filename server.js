@@ -72,8 +72,41 @@ function parseConnectorToken(req) {
   return '';
 }
 
+function isLoopbackRequest(req) {
+  const candidates = [
+    String(req.ip || '').trim(),
+    String(req.socket?.remoteAddress || '').trim(),
+  ].filter(Boolean);
+
+  return candidates.some((value) => (
+    value === '127.0.0.1'
+    || value === '::1'
+    || value === '::ffff:127.0.0.1'
+  ));
+}
+
+function isSameOriginBrowserRequest(req) {
+  const origin = String(req.get('Origin') || '').trim();
+  const host = String(req.get('Host') || '').trim();
+  if (!origin || !host) {
+    return false;
+  }
+
+  try {
+    const originUrl = new URL(origin);
+    return String(originUrl.host || '').toLowerCase() === host.toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
 function connectorAuth(req, res, next) {
   if (!req.path.startsWith('/api/') || PUBLIC_API_PATHS.has(req.path)) {
+    return next();
+  }
+
+  // Keep local browser workflow smooth on laptop that hosts the scanner connector.
+  if (isLoopbackRequest(req) || isSameOriginBrowserRequest(req)) {
     return next();
   }
 
@@ -408,7 +441,8 @@ app.use(cors({
       return;
     }
 
-    callback(new Error('Not allowed by CORS'));
+    // Deny CORS for non-whitelisted origins without crashing request pipeline.
+    callback(null, false);
   },
 }));
 app.use(connectorAuth);

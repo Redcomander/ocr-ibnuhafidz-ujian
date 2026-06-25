@@ -29,8 +29,65 @@ const upload = multer({
   },
 });
 
-const PORT = process.env.PORT || 3099;
+function readConnectorConfig() {
+  const configPath = path.resolve(__dirname, 'connector.config.json');
+  if (!fs.existsSync(configPath)) {
+    return {};
+  }
+
+  try {
+    const raw = fs.readFileSync(configPath, 'utf-8');
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+const connectorConfig = readConnectorConfig();
+const PORT = Number(process.env.PORT || connectorConfig.port || 3099);
+const HOST = String(process.env.HOST || connectorConfig.host || '127.0.0.1').trim();
+const CONNECTOR_TOKEN = String(process.env.SCANNER_CONNECTOR_TOKEN || connectorConfig.token || '').trim();
+const ALLOWED_ORIGINS_RAW = process.env.SCANNER_ALLOWED_ORIGINS
+  || (Array.isArray(connectorConfig.allowedOrigins) ? connectorConfig.allowedOrigins.join(',') : String(connectorConfig.allowedOrigins || ''));
+const ALLOWED_ORIGINS = String(ALLOWED_ORIGINS_RAW || '')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
 const defaultKeyPath = path.resolve(__dirname, 'answer_key.json');
+const PUBLIC_API_PATHS = new Set(['/api/health']);
+
+function parseConnectorToken(req) {
+  const xToken = String(req.get('X-Scanner-Token') || '').trim();
+  if (xToken) {
+    return xToken;
+  }
+
+  const authHeader = String(req.get('Authorization') || '').trim();
+  const parts = authHeader.split(' ');
+  if (parts.length === 2 && /^bearer$/i.test(parts[0])) {
+    return String(parts[1] || '').trim();
+  }
+
+  return '';
+}
+
+function connectorAuth(req, res, next) {
+  if (!req.path.startsWith('/api/') || PUBLIC_API_PATHS.has(req.path)) {
+    return next();
+  }
+
+  if (!CONNECTOR_TOKEN) {
+    return next();
+  }
+
+  const incomingToken = parseConnectorToken(req);
+  if (!incomingToken || incomingToken !== CONNECTOR_TOKEN) {
+    return res.status(401).json({ error: 'Unauthorized connector request.' });
+  }
+
+  return next();
+}
 
 function getKeyMap() {
   if (!fs.existsSync(defaultKeyPath)) {
@@ -344,7 +401,17 @@ async function acquireFromWindowsScanner(scannerDeviceId) {
 }
 
 app.use(express.json());
-app.use(cors());
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || ALLOWED_ORIGINS.length === 0 || ALLOWED_ORIGINS.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error('Not allowed by CORS'));
+  },
+}));
+app.use(connectorAuth);
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/api/health', (_req, res) => {
@@ -561,6 +628,11 @@ app.get('/api/answer-key/current', (_req, res) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`OCR web server running at http://localhost:${PORT}`);
+app.listen(PORT, HOST, () => {
+  const boundHost = HOST === '0.0.0.0' ? 'all interfaces' : HOST;
+  console.log(`OCR web server running at http://${boundHost}:${PORT}`);
+  console.log(`Connector token: ${CONNECTOR_TOKEN ? 'enabled' : 'disabled'}`);
+  if (ALLOWED_ORIGINS.length > 0) {
+    console.log(`CORS origins: ${ALLOWED_ORIGINS.join(', ')}`);
+  }
 });

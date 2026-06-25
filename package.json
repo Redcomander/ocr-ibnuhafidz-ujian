@@ -5,6 +5,10 @@
   "main": "ocr_reader.js",
   "scripts": {
     "start": "node server.js",
+    "start:connector": "node server.js",
+    "connector:install": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-connector-autostart.ps1",
+    "connector:install:run": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-connector-autostart.ps1 -RunNow",
+    "connector:uninstall": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/uninstall-connector-autostart.ps1",
     "scan": "node ocr_reader.js",
     "test": "echo \"No tests configured\""
   },

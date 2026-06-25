@@ -1,0 +1,9 @@
+{
+  "host": "0.0.0.0",
+  "port": 3099,
+  "token": "change-me-long-random-token",
+  "allowedOrigins": [
+    "https://your-frontend-domain.example.com",
+    "http://localhost:5173"
+  ]
+}
